@@ -10,6 +10,9 @@ readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = []
 
+[project.scripts]
+quant-data = "quant_research.taiwan.cli:main"
+
 [dependency-groups]
 dev = [
     "mypy>=1.15",
