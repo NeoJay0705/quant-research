@@ -24,4 +24,6 @@ htmlcov/
 
 # Local research data and results
 /data/
+# Ignore generated evidence logs only; this is not deletion or backup policy.
+/corporate-actions/
 /artifacts/
