@@ -1,19 +1,12 @@
 # quant-research
 
-長期目標是建立可重現的量化研究基礎，研究範圍涵蓋台股、美股與加密貨幣。此專案目前只有可安裝的 Python 套件、開發檢查與初始化文件。
-它尚無市場資料、資料來源整合、ETL、回測或 CLI，也不宣稱已驗證任何金融功能。
+建立可重現量化研究基礎的 Python 專案，長期涵蓋台股、美股及加密資產；目前只有台股官方行情／公司行動取得、維護及唯讀報告工具。它不代表完整普通股歷史資料庫、PIT 資料、調整價格或已驗證回測。現況與界線見[專案需求](docs/project-requirements.md)及[專案設計](docs/project-design.md)；台股需求與實作映射見[台股需求](docs/taiwan-equity-data-requirements.md)及[台股設計](docs/taiwan-equity-data-design.md)。
 
-## 前置需求
+按既有記錄，planned acquisition 範圍 2018-01-01 至 2026-10-22 已完成；不是 live DB 查詢或完整性證明，且 2019/2020 歷史執行證據仍有缺口。觀察股池分類未知；報告不承諾全市場 coverage 或 research readiness。Timer 產生器只寫 unit，不安裝或啟用。
 
-- Python 3.13。
-- [uv](https://docs.astral.sh/uv/) 套件與專案管理工具。
+## 環境與安裝
 
-若本機沒有 Python 3.13，可執行 `uv python install 3.13`。若 uv 尚未安裝，請依 uv 官方安裝文件安裝。
-不要因為 Python 3.13 缺失而自動改用或升級到其他 Python 版本。若 Python 下載、網路連線或依賴解析失敗，請保留錯誤訊息，檢查網路與 Python／uv 設定，再明確重試；不要略過檢查或改用未鎖定的依賴。
-
-## 安裝與檢查
-
-在專案根目錄執行：
+需要 Python 3.13 及 [uv](https://docs.astral.sh/uv/)。若缺少 Python 可執行 `uv python install 3.13`。不要因下載或依賴解析失敗而切換 Python 版本或略過錯誤。
 
 ```sh
 uv sync --locked --group dev
@@ -24,18 +17,17 @@ uv run --locked pytest
 uv build --no-sources
 ```
 
-這些命令會明確回報安裝、Lint、格式、型別、測試或建置錯誤。不要靜默跳過失敗的檢查。
-套件匯入測試只確認套件可匯入，以及安裝版本與專案中繼資料一致；它不是金融功能驗證。
+套件設定、Python 範圍與 CLI entry point 見 [`pyproject.toml`](pyproject.toml)；CI workflow 見 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。
 
-## 目錄
+## 安全操作
 
-- `src/quant_research/`：typed src layout 套件。
-- `tests/`：安裝與中繼資料煙霧測試。
-- `docs/project-plan.md`：研究專案階段、門檻與待決策事項。
-- `.github/workflows/ci.yml`：Pull request 與 push 的品質檢查。
+預設台股資料根目錄為 `~/.local/share/quant-research/taiwan/`，可透過 `--root` 覆寫。互動式 CLI 不會自動強制既有資料目錄或 SQLite 檔案的權限；在共用主機上，首次建立資料前應於執行命令的 shell 設定 `umask 077`，並使用僅自己可存取的資料根目錄。此設定不會收緊既有檔案／目錄的權限；既有部署需另行檢查擁有者、權限及 ACL。產生的 systemd service 已設定 `UMask=0077`。下列報告命令為讀取用途；缺少 root/DB 時不應建立 DB：
 
-本機 `data/` 與 `artifacts/` 路徑不納入版本控制。Git 忽略規則只限制版本控制追蹤，不是備份、保留或刪除政策。
+```sh
+uv run --locked quant-data --root ~/.local/share/quant-research/taiwan status
+uv run --locked quant-data --root ~/.local/share/quant-research/taiwan observation-universe --date 2026-10-22 --source official
+uv run --locked quant-data --root ~/.local/share/quant-research/taiwan availability --start 2026-10-01 --end 2026-10-22
+uv run --locked quant-data --root ~/.local/share/quant-research/taiwan corporate-actions
+```
 
-## 授權
-
-本專案尚未選定開源授權。請勿假設程式碼已依特定開源授權發布。
+`sync`、`backfill`、`sync-events`、`resume`、`maintain-events` 會寫 DB/raw；執行前先檢查 root、scope 並取得明確授權。`write-schedule` 會寫 unit 檔案但不安裝或啟用 systemd timer。raw 不自動刪除；勿手動刪除 live SQLite `-wal`／`-shm`，唯讀 API 允許 SQLite 正常管理這些 sidecar。FinMind live request 預設停用；不要提供或硬編碼 token。沒有選定開源授權。
