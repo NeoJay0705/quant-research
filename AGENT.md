@@ -2,7 +2,7 @@
 
 ## 技術與範圍
 - Python 3.13、uv、`src/quant_research` typed src layout；專案設定與鎖定品質檢查以 [`pyproject.toml`](pyproject.toml) 及 [CI](.github/workflows/ci.yml) 為準。
-- 長期目標含台股、美股與加密資產；目前僅台股官方行情／事件資料工作流及報告已實作。不要把觀察池／候選事件描述為完整普通股歷史、完整 coverage、PIT、調整價格或研究就緒。詳見四份[需求](docs/project-requirements.md)、[專案設計](docs/project-design.md)、[台股需求](docs/taiwan-equity-data-requirements.md)、[台股設計](docs/taiwan-equity-data-design.md)。
+- 長期目標含台股、美股與加密資產；已實作台股官方行情／事件工作流及報告，以及離線 Taiwan Quant Dataset 內部順序計算核心。Dataset 不另指定基準日，換股生效後才調整當日及後續價格；現金／股票股利及退還款只記錄，可選現金缺值為零。舊 bundle、reader/export、版本 manifest、coverage／區間阻擋系統及 dataset CLI 已刪除；對外格式與 API 待確認，不自行恢復。不得宣稱完整普通股歷史、全市場 coverage、PIT、交易所認證價格或已驗證回測；既有報告狀態語意不變。詳見[需求](docs/taiwan-quant-dataset-requirements.md)、[設計](docs/taiwan-quant-dataset-design.md)、[使用界線](docs/taiwan-quant-dataset-usage.md)。其他背景見四份[需求](docs/project-requirements.md)、[專案設計](docs/project-design.md)、[台股需求](docs/taiwan-equity-data-requirements.md)、[台股設計](docs/taiwan-equity-data-design.md)。
 - 台股現有取得只用固定 TWSE／TPEx allowlist；FinMind 新 live request 停用，舊任務與 raw 保留且不混入官方報告。空資料 DB/API 保留 `empty_unverified`；文件層有限結案政策不等於程式 relabel。
 
 ## 開發規範
