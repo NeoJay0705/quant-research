@@ -148,9 +148,10 @@ def build_corporate_actions(
     source: str = "official",
     start: str | None = None,
     end: str | None = None,
+    context: Context | None = None,
 ) -> dict[str, object]:
     """Aggregate approved event summaries in an isolated Decimal context."""
-    with localcontext(Context(prec=512)):
+    with localcontext(context if context is not None else Context(prec=512)):
         return _build_corporate_actions(
             observations, links, tasks, symbol=symbol, source=source, start=start, end=end
         )
