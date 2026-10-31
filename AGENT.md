@@ -5,6 +5,12 @@
 - 長期目標含台股、美股與加密資產；已實作台股官方行情／事件工作流及報告，以及離線 Taiwan Quant Dataset 內部順序計算核心。Dataset 不另指定基準日，換股生效後才調整當日及後續價格；現金／股票股利及退還款只記錄，可選現金缺值為零。舊 bundle、reader/export、版本 manifest、coverage／區間阻擋系統及 dataset CLI 已刪除；對外格式與 API 待確認，不自行恢復。不得宣稱完整普通股歷史、全市場 coverage、PIT、交易所認證價格或已驗證回測；既有報告狀態語意不變。詳見[需求](docs/taiwan-quant-dataset-requirements.md)、[設計](docs/taiwan-quant-dataset-design.md)、[使用界線](docs/taiwan-quant-dataset-usage.md)。其他背景見四份[需求](docs/project-requirements.md)、[專案設計](docs/project-design.md)、[台股需求](docs/taiwan-equity-data-requirements.md)、[台股設計](docs/taiwan-equity-data-design.md)。
 - 台股現有取得只用固定 TWSE／TPEx allowlist；FinMind 新 live request 停用，舊任務與 raw 保留且不混入官方報告。空資料 DB/API 保留 `empty_unverified`；文件層有限結案政策不等於程式 relabel。
 
+## 策略研究
+- 已確認並實作首版 `quant_research.research` Python介面：`capabilities()`提供功能目錄；共通typed資料、特徵／標籤／切片、下一開盤回測、公司行動帳務、績效／比較及新目錄保存。見[研究需求](docs/robot-first-strategy-research-requirements.md)、[設計／接受紀錄](docs/robot-first-strategy-research-design.md)、[使用方式](docs/robot-first-strategy-research-usage.md)，人工例子在 `examples/research/`。
+- 首版只取既有本機TWSE／TPEx明確子集，無UI／下單／新依賴／研究CLI；不恢復舊Dataset發布API。標準函式庫、Decimal50位HALF_EVEN、普通股分類限制與observed-calendar假設不可隱藏。
+- 原價帳戶與調整價格分開。股數採直接比例或純面額前後面額比，不用市場股價比猜持股；缺實際付款／新股可用日按已確認事件日模型替代，來源實際日期仍None。手算／真實小樣本只驗收模型與資料串接，不宣稱實盤可實現或完整金融資料認證。
+- `save_run`只寫新目錄，POSIX新結果目錄0700／新檔0600，不改全域umask或既有權限；拒production／載入來源／分類輸入及symlink路徑；完整資料寫完才發布COMPLETE。任意Python策略是可信程式，不是沙箱；prefix view不保證任意closure或最新修訂來源的PIT。
+
 ## 開發規範
 - Import 不可發網路請求、讀市場資料或產生外部副作用；不在程式碼、文件或測試硬編碼憑證。
 - 只修改核准範圍，不自行擴大功能／相依套件；修改功能時更新相應測試與文件。不得虛報未執行測試。

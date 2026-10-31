@@ -1,0 +1,97 @@
+"""Immutable research inputs, analysis and backtesting APIs; no import-time market-data I/O."""
+
+from .backtest import (
+    CostModel,
+    Decision,
+    DecisionView,
+    Fill,
+    MarketOrder,
+    Rejection,
+    ResearchBacktestError,
+    RunResult,
+    backtest,
+    target_weights,
+)
+from .catalog import Capability, capabilities
+from .data import ResearchData, TimeView
+from .features import (
+    DailyGroupAnalysis,
+    FeatureAnalysis,
+    FeatureSeries,
+    FeatureValue,
+    ForwardReturnLabel,
+    GroupAnalysis,
+    LabelSeries,
+    analyze_feature,
+    compute_feature,
+    forward_returns,
+)
+from .ledger import AccountSnapshot, CashReceivable, LedgerEvent, Position, SessionUpdate, Valuation
+from .models import (
+    Bar,
+    CorporateAction,
+    ResearchError,
+    ResearchInputError,
+    SourceDiagnostic,
+    UnsupportedDataError,
+)
+from .performance import (
+    DailyReturn,
+    PerformanceSummary,
+    RunComparison,
+    RunDifference,
+    compare_runs,
+    daily_returns,
+    summarize,
+)
+from .results import ResearchSaveError, save_run
+from .taiwan import load_taiwan
+
+__all__ = [
+    "AccountSnapshot",
+    "Bar",
+    "Capability",
+    "CashReceivable",
+    "CorporateAction",
+    "CostModel",
+    "DailyGroupAnalysis",
+    "DailyReturn",
+    "Decision",
+    "DecisionView",
+    "FeatureAnalysis",
+    "FeatureSeries",
+    "FeatureValue",
+    "Fill",
+    "ForwardReturnLabel",
+    "GroupAnalysis",
+    "LabelSeries",
+    "LedgerEvent",
+    "MarketOrder",
+    "PerformanceSummary",
+    "Position",
+    "Rejection",
+    "ResearchBacktestError",
+    "ResearchData",
+    "ResearchError",
+    "ResearchInputError",
+    "ResearchSaveError",
+    "RunComparison",
+    "RunDifference",
+    "RunResult",
+    "SessionUpdate",
+    "SourceDiagnostic",
+    "TimeView",
+    "UnsupportedDataError",
+    "Valuation",
+    "analyze_feature",
+    "backtest",
+    "capabilities",
+    "compare_runs",
+    "compute_feature",
+    "daily_returns",
+    "forward_returns",
+    "load_taiwan",
+    "save_run",
+    "summarize",
+    "target_weights",
+]
