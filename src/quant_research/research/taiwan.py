@@ -2,14 +2,26 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
-from quant_research.taiwan.dataset.build import _iter_series_from_reader
+from quant_research.taiwan.dataset.build import (
+    QuoteClassification,
+    _iter_series_from_reader,
+)
 from quant_research.taiwan.dataset.classification import EvidenceSet
+from quant_research.taiwan.dataset.events import EventValue
 from quant_research.taiwan.dataset.financial import parse_decimal
-from quant_research.taiwan.dataset.models import BuildSpec, DatasetError, SourceError
-from quant_research.taiwan.dataset.source import RecordResult, SourceReader
+from quant_research.taiwan.dataset.models import (
+    AdjustedQuote,
+    BuildSpec,
+    DatasetError,
+    QuoteValue,
+    SourceError,
+)
+from quant_research.taiwan.dataset.source import RecordResult, Scope, SourceReader
 
 from .data import ResearchData
 from .models import (
@@ -20,6 +32,169 @@ from .models import (
     SourceDiagnostic,
     UnsupportedDataError,
 )
+
+
+def _build_bars(
+    market: str,
+    symbol: str,
+    raw_quotes: tuple[QuoteValue, ...],
+    adjusted_by_day: Mapping[str, AdjustedQuote],
+    classifications: tuple[QuoteClassification, ...],
+    quality_flags: Callable[[QuoteValue], tuple[str, ...]],
+) -> tuple[Bar, ...]:
+    """Convert raw quotes and independent adjustment/classification inputs to bars."""
+    result: list[Bar] = []
+    for quote, cls in zip(raw_quotes, classifications, strict=True):
+        adjusted = adjusted_by_day.get(quote.date)
+        result.append(
+            Bar(
+                market=market,
+                symbol=symbol,
+                date=quote.date,
+                open=quote.open,
+                high=quote.high,
+                low=quote.low,
+                close=quote.close,
+                volume=quote.volume,
+                amount=quote.amount,
+                adjusted_open=adjusted.open if adjusted else None,
+                adjusted_high=adjusted.high if adjusted else None,
+                adjusted_low=adjusted.low if adjusted else None,
+                adjusted_close=adjusted.close if adjusted else None,
+                classification=cls.classification,
+                classification_reason=cls.reason,
+                classification_refs=cls.evidence_refs,
+                source_refs=quote.refs,
+                quality_flags=quality_flags(quote),
+            )
+        )
+    return tuple(result)
+
+
+def _build_actions(
+    market: str,
+    symbol: str,
+    events: tuple[EventValue, ...],
+    selected_bar: Bar | None,
+    reader: SourceReader,
+    scope_by_ref: Mapping[tuple[str, str | None], Scope],
+    link_cache: Mapping[tuple[str, str | None], tuple[dict[str, Any], ...]],
+    summary_records: Mapping[tuple[str, str | None, int], RecordResult],
+    child_record_cache: dict[tuple[int, str, str], tuple[RecordResult, ...]],
+) -> tuple[CorporateAction, ...]:
+    """Resolve event provenance and convert normalized events without opening a reader."""
+    actions: list[CorporateAction] = []
+    for event in events:
+        er = event.ref
+        summary_scope = scope_by_ref.get((er.task_id, er.snapshot_id))
+        if summary_scope is None:
+            raise UnsupportedDataError(f"missing event summary scope for {er}")
+        summary = summary_records.get((er.task_id, er.snapshot_id, er.record_id))
+        if summary is None or summary.diagnostic or summary.payload is None:
+            raise UnsupportedDataError(f"invalid event summary record for {er}: {summary}")
+        flags = summary.quality_flags
+        payload: dict[str, object] = dict(summary.payload)
+        if er.detail_task_id is not None:
+            links = link_cache.get((er.task_id, er.snapshot_id), ())
+            child_link = next(
+                (
+                    link
+                    for link in links
+                    if link["child_task_id"] == er.detail_task_id
+                    and link["parent_task_id"] == er.task_id
+                    and link["parent_snapshot_id"] == er.snapshot_id
+                ),
+                None,
+            )
+            if child_link is None:
+                raise UnsupportedDataError(f"missing exact event child link for {er}")
+            child_meta = reader.child_scope(child_link)
+            if (
+                child_meta is None
+                or not child_meta["available"]
+                or child_meta["task_id"] != er.detail_task_id
+                or child_meta["snapshot_id"] != er.detail_snapshot_id
+                or child_meta["dataset"] != er.detail_dataset
+            ):
+                raise UnsupportedDataError(
+                    f"invalid exact event child scope for {er}: {child_meta}"
+                )
+            link_key = (
+                int(child_link["link_id"]),
+                er.detail_task_id,
+                er.detail_snapshot_id or "",
+            )
+            if link_key not in child_record_cache:
+                child_record_cache[link_key] = tuple(
+                    reader.iter_child_records(child_link, limit=10000)
+                )
+            child = next(
+                (r for r in child_record_cache[link_key] if r.record_id == er.detail_record_id),
+                None,
+            )
+            if child is None or child.diagnostic or child.payload is None:
+                raise UnsupportedDataError(f"invalid event child record for {er}: {child}")
+            flags = tuple(dict.fromkeys((*flags, *child.quality_flags)))
+            payload.update({k: v for k, v in child.payload.items() if v is not None})
+
+        def decimal_field(
+            name: str, *, record_ref: object = er, fields: dict[str, object] = payload
+        ) -> Decimal | None:
+            value = fields.get(name)
+            if value is None:
+                return None
+            try:
+                return parse_decimal(value)
+            except (ValueError, TypeError) as exc:
+                raise UnsupportedDataError(f"invalid {name} in {record_ref}") from exc
+
+        if selected_bar is None:
+            raise UnsupportedDataError(f"event has no selected quote bar for {symbol}: {er}")
+        actions.append(
+            CorporateAction(
+                market=market,
+                symbol=event.symbol,
+                event_type=event.event_type,
+                effective_date=event.effective_date,
+                dividend=event.dividend,
+                bonus_share_ratio=event.bonus_share_ratio,
+                cash_return_per_share=event.cash_return_per_share,
+                share_multiplier=event.share_multiplier,
+                par_before=decimal_field("par_before"),
+                par_after=decimal_field("par_after"),
+                before_price=event.before_price,
+                reference_price=event.reference_price,
+                cash_credit_date=(
+                    str(payload["cash_credit_date"])
+                    if payload.get("cash_credit_date") is not None
+                    else None
+                ),
+                share_available_date=(
+                    str(payload["share_available_date"])
+                    if payload.get("share_available_date") is not None
+                    else None
+                ),
+                classification=selected_bar.classification,
+                classification_reason=selected_bar.classification_reason,
+                classification_refs=selected_bar.classification_refs,
+                source_refs=(f"{er.dataset}:{er.snapshot_id}:{er.record_id}",)
+                + (
+                    (f"{er.detail_dataset}:{er.detail_snapshot_id}:{er.detail_record_id}",)
+                    if er.detail_dataset
+                    else ()
+                ),
+                quality_flags=flags,
+                reasons=tuple(flags),
+                payload=tuple(
+                    sorted(
+                        (str(k), str(v) if v is not None else None)
+                        for k, v in payload.items()
+                        if isinstance(v, (str, int, bool)) or v is None
+                    )
+                ),
+            )
+        )
+    return tuple(actions)
 
 
 def load_taiwan(
@@ -128,160 +303,34 @@ def load_taiwan(
             child_record_cache: dict[tuple[int, str, str], tuple[RecordResult, ...]] = {}
             bar_by_symbol: dict[str, Bar] = {}
             for item in series:
-                classes = item.classifications
-                adjusted_by_day = {row.quote.date: row for row in item.quotes}
-                for quote, cls in zip(item.raw_quotes, classes, strict=True):
-                    adjusted_quote = adjusted_by_day.get(quote.date)
-                    bar = Bar(
-                        market=market,
-                        symbol=item.symbol,
-                        date=quote.date,
-                        open=quote.open,
-                        high=quote.high,
-                        low=quote.low,
-                        close=quote.close,
-                        volume=quote.volume,
-                        amount=quote.amount,
-                        adjusted_open=adjusted_quote.open if adjusted_quote else None,
-                        adjusted_high=adjusted_quote.high if adjusted_quote else None,
-                        adjusted_low=adjusted_quote.low if adjusted_quote else None,
-                        adjusted_close=adjusted_quote.close if adjusted_quote else None,
-                        classification=cls.classification,
-                        classification_reason=cls.reason,
-                        classification_refs=cls.evidence_refs,
-                        source_refs=quote.refs,
-                        quality_flags=quote_flags.get((quote.symbol, quote.date), ()),
-                    )
-                    bars.append(bar)
+                item_bars = _build_bars(
+                    market,
+                    item.symbol,
+                    item.raw_quotes,
+                    {row.quote.date: row for row in item.quotes},
+                    item.classifications,
+                    lambda quote: quote_flags.get((quote.symbol, quote.date), ()),
+                )
+                bars.extend(item_bars)
+                for bar in item_bars:
                     bar_by_symbol.setdefault(bar.symbol, bar)
-                    classifications.append(
-                        f"{item.symbol}:{quote.date}:{cls.classification}:{cls.reason}"
+                classifications.extend(
+                    f"{item.symbol}:{quote.date}:{cls.classification}:{cls.reason}"
+                    for quote, cls in zip(item.raw_quotes, item.classifications, strict=True)
+                )
+                actions.extend(
+                    _build_actions(
+                        market,
+                        item.symbol,
+                        item.events,
+                        bar_by_symbol.get(item.symbol),
+                        reader,
+                        scope_by_ref,
+                        link_cache,
+                        summary_records,
+                        child_record_cache,
                     )
-                for event in item.events:
-                    er = event.ref
-                    summary_scope = scope_by_ref.get((er.task_id, er.snapshot_id))
-                    if summary_scope is None:
-                        raise UnsupportedDataError(f"missing event summary scope for {er}")
-                    summary = summary_records.get((er.task_id, er.snapshot_id, er.record_id))
-                    if summary is None or summary.diagnostic or summary.payload is None:
-                        raise UnsupportedDataError(
-                            f"invalid event summary record for {er}: {summary}"
-                        )
-                    flags = summary.quality_flags
-                    payload: dict[str, object] = dict(summary.payload)
-                    if er.detail_task_id is not None:
-                        links = link_cache.get((er.task_id, er.snapshot_id), ())
-                        child_link = next(
-                            (
-                                link
-                                for link in links
-                                if link["child_task_id"] == er.detail_task_id
-                                and link["parent_task_id"] == er.task_id
-                                and link["parent_snapshot_id"] == er.snapshot_id
-                            ),
-                            None,
-                        )
-                        if child_link is None:
-                            raise UnsupportedDataError(f"missing exact event child link for {er}")
-                        child_meta = reader.child_scope(child_link)
-                        if (
-                            child_meta is None
-                            or not child_meta["available"]
-                            or child_meta["task_id"] != er.detail_task_id
-                            or child_meta["snapshot_id"] != er.detail_snapshot_id
-                            or child_meta["dataset"] != er.detail_dataset
-                        ):
-                            raise UnsupportedDataError(
-                                f"invalid exact event child scope for {er}: {child_meta}"
-                            )
-                        link_key = (
-                            int(child_link["link_id"]),
-                            er.detail_task_id,
-                            er.detail_snapshot_id or "",
-                        )
-                        if link_key not in child_record_cache:
-                            child_record_cache[link_key] = tuple(
-                                reader.iter_child_records(child_link, limit=10000)
-                            )
-                        child = next(
-                            (
-                                r
-                                for r in child_record_cache[link_key]
-                                if r.record_id == er.detail_record_id
-                            ),
-                            None,
-                        )
-                        if child is None or child.diagnostic or child.payload is None:
-                            raise UnsupportedDataError(
-                                f"invalid event child record for {er}: {child}"
-                            )
-                        flags = tuple(dict.fromkeys((*flags, *child.quality_flags)))
-                        payload.update({k: v for k, v in child.payload.items() if v is not None})
-
-                    def decimal_field(
-                        name: str, *, record_ref: object = er, fields: dict[str, object] = payload
-                    ) -> Decimal | None:
-                        value = fields.get(name)
-                        if value is None:
-                            return None
-                        try:
-                            result = parse_decimal(value)
-                        except (ValueError, TypeError) as exc:
-                            raise UnsupportedDataError(f"invalid {name} in {record_ref}") from exc
-                        return result
-
-                    event_type = event.event_type
-                    selected_bar = bar_by_symbol.get(item.symbol)
-                    if selected_bar is None:
-                        raise UnsupportedDataError(
-                            f"event has no selected quote bar for {item.symbol}: {er}"
-                        )
-                    actions.append(
-                        CorporateAction(
-                            market=market,
-                            symbol=event.symbol,
-                            event_type=event_type,
-                            effective_date=event.effective_date,
-                            dividend=event.dividend,
-                            bonus_share_ratio=event.bonus_share_ratio,
-                            cash_return_per_share=event.cash_return_per_share,
-                            share_multiplier=event.share_multiplier,
-                            par_before=decimal_field("par_before"),
-                            par_after=decimal_field("par_after"),
-                            before_price=event.before_price,
-                            reference_price=event.reference_price,
-                            cash_credit_date=(
-                                str(payload["cash_credit_date"])
-                                if payload.get("cash_credit_date") is not None
-                                else None
-                            ),
-                            share_available_date=(
-                                str(payload["share_available_date"])
-                                if payload.get("share_available_date") is not None
-                                else None
-                            ),
-                            classification=selected_bar.classification,
-                            classification_reason=selected_bar.classification_reason,
-                            classification_refs=selected_bar.classification_refs,
-                            source_refs=(f"{er.dataset}:{er.snapshot_id}:{er.record_id}",)
-                            + (
-                                (
-                                    f"{er.detail_dataset}:{er.detail_snapshot_id}:{er.detail_record_id}",
-                                )
-                                if er.detail_dataset
-                                else ()
-                            ),
-                            quality_flags=flags,
-                            reasons=tuple(flags),
-                            payload=tuple(
-                                sorted(
-                                    (str(k), str(v) if v is not None else None)
-                                    for k, v in payload.items()
-                                    if isinstance(v, (str, int, bool)) or v is None
-                                )
-                            ),
-                        )
-                    )
+                )
             if not bars:
                 missing = tuple(s for s in symbols if not any(b.symbol == s for b in bars))
                 raise UnsupportedDataError(f"no quote records for requested symbols: {missing}")

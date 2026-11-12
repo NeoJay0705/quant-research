@@ -118,14 +118,35 @@ def _deduplicate(events: Iterable[EventValue]) -> list[EventValue]:
 
 
 def process_quotes(
-    quotes: Iterable[QuoteValue], events: Iterable[EventValue]
+    quotes: Iterable[QuoteValue],
+    events: Iterable[EventValue],
+    *,
+    initial_factor: Decimal | None = None,
+    applied_through: str | None = None,
 ) -> tuple[AdjustedQuote, ...]:
     """Process quotes in ascending date order, independently per source and symbol.
 
-    Inputs may be unsorted. Each stream's first included quote establishes d0 and C=1;
-    event updates are consumed once by a date cursor before that day's OHLC calculation.
+    Inputs may be unsorted. By default each stream's first included quote establishes
+    d0 and C=1. Optional continuation arguments resume the cumulative factor from
+    ``initial_factor`` and replace the d0 event boundary with ``applied_through``.
+    Event updates are consumed once by a date cursor before that day's OHLC calculation.
     """
     ordered_quotes = sorted(quotes, key=lambda q: (q.source, q.symbol, _quote_day(q), q.refs))
+    continuing = initial_factor is not None or applied_through is not None
+    if initial_factor is not None and (not initial_factor.is_finite() or initial_factor <= 0):
+        raise ValueError("initial_factor must be finite and positive")
+    applied_day: date | None = None
+    if applied_through is not None:
+        try:
+            applied_day = date.fromisoformat(applied_through)
+            if applied_day.isoformat() != applied_through:
+                raise ValueError
+        except ValueError as exc:
+            raise ValueError("applied_through must be a valid ISO date") from exc
+    if continuing and len({(q.source, q.symbol) for q in ordered_quotes}) > 1:
+        raise ValueError("continuation requires quotes from one source and symbol stream")
+    if applied_day is not None and any(_quote_day(q) <= applied_day for q in ordered_quotes):
+        raise ValueError("every quote date must be later than applied_through")
     grouped: dict[tuple[str, str], list[EventValue]] = {}
     for event in _deduplicate(events):
         grouped.setdefault((event.source, event.symbol), []).append(event)
@@ -144,9 +165,12 @@ def process_quotes(
         stream_events = grouped.get(stream_key, [])
         d0 = _quote_day(stream[0])
         event_index = 0
-        while event_index < len(stream_events) and _event_day(stream_events[event_index]) <= d0:
+        boundary = applied_day if applied_day is not None else d0
+        while (
+            event_index < len(stream_events) and _event_day(stream_events[event_index]) <= boundary
+        ):
             event_index += 1
-        cumulative = Decimal(1)
+        cumulative = initial_factor if initial_factor is not None else Decimal(1)
         with localcontext(isolated_context(50)):
             for quote in stream:
                 quote_day = _quote_day(quote)

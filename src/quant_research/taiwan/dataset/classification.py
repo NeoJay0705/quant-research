@@ -23,6 +23,11 @@ _CFI_ORDINARY = re.compile(r"ES[A-Z]{4}\Z", re.ASCII)
 _HEADER_TOKENS = ("有價證券代號及名稱", "CFICode")
 
 
+def is_four_digit_code(symbol: str) -> bool:
+    """Return whether symbol is exactly four ASCII digits."""
+    return _CODE.fullmatch(symbol) is not None
+
+
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -337,7 +342,7 @@ class EvidenceSet:
         del source_hint, venue_hint
         evidence = self._rows_by_symbol.get(symbol, [])
         refs = tuple(sorted(row["evidence_id"] for row in evidence))
-        if not isinstance(symbol, str) or not _CODE.fullmatch(symbol):
+        if not isinstance(symbol, str) or not is_four_digit_code(symbol):
             return ClassificationResult(str(symbol), "unknown", "invalid_symbol_shape", refs)
         signals = {row["signal"] for row in evidence}
         if "ordinary" in signals and ("nonordinary" in signals or "ambiguous" in signals):
