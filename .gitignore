@@ -27,3 +27,11 @@ htmlcov/
 # Ignore generated evidence logs only; this is not deletion or backup policy.
 /corporate-actions/
 /artifacts/
+
+# Local derived research caches and SQLite sidecars (never commit data)
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm

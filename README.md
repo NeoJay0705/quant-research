@@ -26,6 +26,10 @@ uv run --locked python examples/research/ranking.py
 
 另完成2022-09少量真實TWSE／TPEx研究及手算核對，不是全市場、全量計算或策略績效認證。回測使用理論可分割股數、明示成本與日線成交模型；實際入帳／新股可用日期缺失時採事件日替代並揭露偏差。原價估值、公司行動帳務與調整價格分開；不把市場股價比當精確持股比例。
 
+## 研究就緒資料快取
+
+`research.build_cache`／`update_cache`／`rebuild_cache` 把已下載的 TWSE／TPEX 資料轉成可重建的單一 SQLite 快取，`research.load_cached` 直接載入 `ResearchData`（與 `load_taiwan` 一致，但調整價起點固定為快取最早報價）。快取在資料根目錄之外、唯讀來源、單一交易原子更新。使用方式、已知限制與規模推估見[使用說明](docs/research-data-cache-usage.md)。
+
 ## 環境與安裝
 
 需要 Python 3.13 及 [uv](https://docs.astral.sh/uv/)。若缺少 Python 可執行 `uv python install 3.13`。不要因下載或依賴解析失敗而切換 Python 版本或略過錯誤。

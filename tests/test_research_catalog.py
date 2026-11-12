@@ -22,6 +22,12 @@ _EXPECTED = {
     "target_weights",
     "daily_returns",
     "load_taiwan",
+    "build_cache",
+    "update_cache",
+    "rebuild_cache",
+    "load_cached",
+    "cache_status",
+    "list_symbols",
 }
 
 
@@ -77,7 +83,7 @@ socket.socket = blocked
 sqlite3.connect = blocked
 SourceReader.__enter__ = blocked
 import quant_research.research as research
-assert len(research.capabilities()) == 10
+assert len(research.capabilities()) == 16
 """
     subprocess.run(
         [sys.executable, "-c", guard], cwd=ROOT, check=True, capture_output=True, text=True

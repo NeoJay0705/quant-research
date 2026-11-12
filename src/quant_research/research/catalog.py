@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from .backtest import backtest, target_weights
+from .cache import build_cache, cache_status, list_symbols, load_cached, rebuild_cache, update_cache
 from .features import analyze_feature, compute_feature, forward_returns
 from .performance import compare_runs, daily_returns, summarize
 from .results import save_run
@@ -157,6 +158,50 @@ def capabilities() -> tuple[Capability, ...]:
                 "A zero previous NAV yields None with reason 'previous_nav_zero'.",
                 "Returns are not annualized.",
             ),
+        ),
+        _capability(
+            load_cached,
+            "Read a previously built immutable research-data cache without source I/O.",
+            "ResearchData: cached bars, corporate actions, sessions and provenance.",
+            "from quant_research.research import load_cached\ndata = load_cached(path, 'twse')",
+            ("Only data within the recorded cache coverage is available.",),
+        ),
+        _capability(
+            build_cache,
+            "Build the first derived research-data cache for one Taiwan market.",
+            "BuildSummary with market coverage and available/unavailable symbol counts.",
+            "from quant_research.research import build_cache\n"
+            "summary = build_cache(path, root, 'twse', start, end)",
+            ("Reads source data read-only; cache path must be outside protected inputs.",),
+        ),
+        _capability(
+            update_cache,
+            "Append new source dates to an existing market cache atomically.",
+            "BuildSummary with updated coverage and market-wide symbol counts.",
+            "from quant_research.research import update_cache\n"
+            "summary = update_cache(path, root, 'twse', end_date)",
+            ("Does not detect source revisions before the previous built-through date.",),
+        ),
+        _capability(
+            rebuild_cache,
+            "Rebuild cached symbols from a chosen date through the existing coverage end.",
+            "BuildSummary with unchanged market coverage and refreshed symbol totals.",
+            "from quant_research.research import rebuild_cache\n"
+            "summary = rebuild_cache(path, root, 'twse', start_date)",
+            ("Partial rebuild preserves earlier rows; unavailable symbols require full rebuild.",),
+        ),
+        _capability(
+            cache_status,
+            "Inspect per-market coverage and symbol availability counts.",
+            "Tuple of CacheStatus records.",
+            "from quant_research.research import cache_status\nstatus = cache_status(path)",
+        ),
+        _capability(
+            list_symbols,
+            "List cached symbols and their availability reasons.",
+            "Tuple of SymbolStatus records.",
+            "from quant_research.research import list_symbols\n"
+            "symbols = list_symbols(path, 'twse')",
         ),
         _capability(
             load_taiwan,
